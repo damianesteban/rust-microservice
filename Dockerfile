@@ -1,62 +1,25 @@
-# # Cargo Build Stage
-# # ------------------------------------------------------------------------------
+FROM debian:jessie AS builder
 
-# FROM ekidd/rust-musl-builder as cargo-build
+# You'll need to change `libmysqlclient-dev` to `libpq-dev` if you're using Postgres
+RUN apt-get update && apt-get install -y curl libssl-dev libpq-dev libclang-dev pkg-config build-essential
 
-# # RUN apt-get update
+# Install rust
+RUN curl https://sh.rustup.rs/ -sSf | \
+  sh -s -- -y --default-toolchain nightly-2019-09-16
 
-# # RUN apt-get install musl-tools libssl-dev pkg-config -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-# # RUN rustup target add x86_64-unknown-linux-musl
-# RUN rustup target add x86_64-unknown-linux-musl
-
-# WORKDIR /usr/src/user-service
-
-# COPY Cargo.toml Cargo.toml
-# COPY diesel.toml diesel.toml
-
-# RUN mkdir src/
-
-# RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > src/main.rs
-
-# RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl
-
-# RUN rm -f target/x86_64-unknown-linux-musl/release/deps/user-service*
-
-# COPY . .
-
-# RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl 
-
-# # ------------------------------------------------------------------------------
-# # Final Stage
-# # ------------------------------------------------------------------------------
-# FROM alpine:latest
-
-# COPY --from=cargo-build /usr/src/user-service/target/x86_64-unknown-linux-musl/release/user-service /usr/local/bin/user-service
-
-# CMD ["user-service"]
-
-ARG BASE_IMAGE=ekidd/rust-musl-builder:latest
-
-# Our first FROM statement declares the build environment.
-FROM ${BASE_IMAGE} AS builder
-
-# Add our source code.
 ADD . ./
 
-# Fix permissions on source code.
-RUN sudo chown -R rust:rust /home/rust
-ENV PKG_CONFIG_ALLOW_CROSS=1
-
-# Build our application.
 RUN cargo build --release
 
-# Now, we need to build our _real_ Docker container, copying in `using-diesel`.
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-COPY --from=builder \
-    /home/rust/src/target/x86_64-unknown-linux-musl/release/user-service \
-    /usr/local/bin/
-CMD /usr/local/bin/user-service
+FROM debian:jessie
 
-EXPOSE 5000
+RUN apt-get update && apt-get install -y libpq-dev
+
+COPY --from=builder \
+  /target/release/user-service \
+  /usr/local/bin/
+
+WORKDIR /root
+CMD ROCKET_PORT=$PORT /usr/local/bin/user-service
